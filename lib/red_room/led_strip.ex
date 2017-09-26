@@ -21,7 +21,20 @@ defmodule RedRoom.Demo do
     {:ok, s} = RedRoom.LEDStrip.start_link
     c = Supervisor.which_children(s) |> Enum.at(0) |> elem(1)
     Process.register(s, :demo_supervisor)
-    Process.register(c, :strip)
+    # Process.register(c, :strip)
+  end
+
+  def start_gl_gc do
+    GlMutex.start_link
+    gc = GameCore.start_link
+    {:ok, pid} = Agent.start_link(fn -> gc end)
+    Process.register(pid, :gc_config)
+  end
+
+  def start_gl do
+    if !Process.whereis(:strip), do: start_demo()
+    if !Process.whereis(:gc_config), do: start_gl_gc()
+    GameCore.load(Agent.get(:gc_config, &(&1)), Lesson03z)
   end
 
   def rand_config do

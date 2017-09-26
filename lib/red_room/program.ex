@@ -62,6 +62,22 @@ defmodule RedRoom.Program do
     {:reply, str, {rem(counter + 25, 23900), new_states}}
   end
 
+  def handle_call(:gl_tick, _from, {counter, states}) do
+    new_states = Task.async_stream(states, fn %{config: {mod, freq, len, dir}, state: current, tick: t} = this_state ->
+      tick = div(counter, freq)
+      case tick == t do
+        true -> this_state
+        _ -> %{this_state | state: apply_step(mod, [current, tick, len, dir]), tick: tick}
+      end
+    end)
+    |> Enum.map(fn {:ok, val} -> val end)
+
+    # TODO: reduce instead of map/flatten
+    str = new_states |> Enum.flat_map(fn %{ state: s } -> s |> RedRoom.GlHelper.map_to_dots end)
+
+    {:reply, str, {rem(counter + 25, 23900), new_states}}
+  end
+
   defp apply_step(function, args) when is_function(function), do: Kernel.apply(function, args)
   defp apply_step(module, args), do: Kernel.apply(module, :step, args)
 
@@ -72,6 +88,33 @@ defmodule RedRoom.Program do
   def handle_info(:tick, state) do
     IO.puts(GenServer.call(self(), :tick))
     {:noreply, state}
+  end
+end
+
+defmodule RedRoom.GlHelper do
+  def map_to_dots(pattern) do
+    pattern |> Enum.map(&map_to_dot/1)
+  end
+
+  def map_to_dot({r, g, b, a}) do
+    { r / 255, g / 255, b / 255, a / 255 }
+  end
+
+  def map_to_dot(:red), do: { 1.0, 0.0, 0.0, 1.0 }
+  def map_to_dot(:blue), do: { 0.0, 0.0, 1.0, 1.0 }
+  def map_to_dot(:green), do: { 0.0, 1.0, 0.0, 1.0 }
+  def map_to_dot(:cyan), do: { 0.0, 0.75, 0.71, 1.0 }
+  def map_to_dot(:magenta), do: { 0.87, 0.18, 0.51, 1.0 }
+  def map_to_dot(:yellow), do: { 0.95, 0.71, 0.0, 1.0 }
+  def map_to_dot(:blank), do: { 0.0, 0.0, 0.0, 1.0 }
+
+  def rand_color() do
+    {
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1
+    }
   end
 end
 
@@ -166,19 +209,29 @@ defmodule RedRoom.Program.Sample2 do
   def step(_prev, _index, strip_length, _dir \\ :forward) do
     Stream.repeatedly(fn ->
       if :rand.uniform(10) <= 3 do
-        Enum.random([ :red, :yellow, :green, :cyan, :magenta, :blue ])
+        # Enum.random([ :red, :yellow, :green, :cyan, :magenta, :blue ])
+        RedRoom.GlHelper.rand_color()
       else
         {0,0,0,0}
       end
     end)
     |> Enum.take(strip_length)
   end
+
+  defp rand_color() do
+    {
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1,
+      :rand.uniform(256) - 1
+    }
+  end
 end
 
 defmodule RedRoom.Program.Sample4 do
   def step(_prev, index, strip_length, _dir \\ :forward) do
     i = rem(index, 239)
-    Stream.cycle([:"color#{i + 16}"]) |> Enum.take(rem(index, strip_length))
+    Stream.cycle([RedRoom.GlHelper.rand_color]) |> Enum.take(rem(index, strip_length))
   end
 end
 
@@ -189,7 +242,8 @@ defmodule RedRoom.Program.Sample5 do
   end
 
   defp rand_color do
-    :"color#{(16..255) |> Enum.random}"
+    # :"color#{(16..255) |> Enum.random}"
+    RedRoom.GlHelper.rand_color
   end
 end
 
